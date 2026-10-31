@@ -119,7 +119,7 @@
     <div id="resultContent" class="max-w-md w-full bg-slate-900 border-2 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl"></div>
   </div>
 
-  <!-- 現場快速建檔 Modal -->
+  <!-- 現場快速建檔 Modal (已加入重複手機號碼攔截防呆) -->
   <div id="quickAddModal" class="fixed inset-0 bg-black/85 z-40 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl">
       <h3 class="text-lg font-bold text-white mb-1">現場快速建檔</h3>
@@ -240,7 +240,7 @@
     let db;
     let isCloudReady = false;
 
-    // 開機優先載入快取，徹底防止白屏歸零
+    // 開機優先載入快取，防白屏歸零
     let members = JSON.parse(localStorage.getItem('gk_cache_members') || '{}');
     let checkinLogs = JSON.parse(localStorage.getItem('gk_cache_logs') || '[]');
     let ptPool = JSON.parse(localStorage.getItem('gk_cache_pt') || '{}');
@@ -249,14 +249,14 @@
     let currentTask = 'CHECKIN';
     let currentPhone = '';
 
-    // 立即顯示上次的本機計數
+    // 立即顯示本機快取計數
     updateCounters();
 
     try {
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
 
-      // 關鍵優化 1：開啟離線持久化，讓平板即使滑掉重開也是秒開，不再等待全檔重拉
+      // 開啟本機持久化
       db.enablePersistence({ synchronizeTabs: true }).catch(err => {
         if (err.code === 'failed-precondition') {
           console.warn('多個分頁開啟，離線快取僅支援主要分頁');
@@ -653,7 +653,7 @@
       renderRecentLogs();
     }
 
-    // 關鍵優化 2：單筆建檔使用 update 局部寫入，只傳輸 1 筆而非上千筆
+    // 現場快速建檔（加入防呆：若電話已存在立即彈窗攔截，不允許重複建檔）
     async function saveQuickMember() {
       const nameInput = document.getElementById('newMemberName');
       const phoneInput = document.getElementById('newMemberPhone');
@@ -677,6 +677,13 @@
         return;
       }
 
+      // 重複電話檢查防呆
+      if (members[phone]) {
+        alert(`⚠️ 建檔失敗：此手機號碼已經註冊過！\n現有會員姓名：${members[phone].name}\n手機號碼：${phone}`);
+        phoneInput.focus();
+        return;
+      }
+
       // 1. 本地立即生效並寫入本機快取
       members[phone] = { name, phone, bodyTested: false };
       localStorage.setItem('gk_cache_members', JSON.stringify(members));
@@ -689,14 +696,13 @@
 
       alert(`✅ 建檔成功！\n姓名：${name}\n電話：${phone}\n資料已寫入系統。`);
 
-      // 2. 局部快速更新：只同步新增的該欄位，不再重新上傳整份檔案
+      // 2. 局部快速更新至雲端
       if (isCloudReady) {
         try {
           const updateField = {};
           updateField[`list.${phone}`] = { name, phone, bodyTested: false };
           await db.collection("gk_gym").doc("members_data").update(updateField);
         } catch (err) {
-          // 若原本 doc 不存在則回退 set
           syncToCloud('members_data', { list: members });
         }
       }
