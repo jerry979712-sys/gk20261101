@@ -83,7 +83,7 @@
       </div>
     </div>
 
-    <!-- 情況二：姓名輸入框 -->
+    <!-- 情況二：姓名輸入框 (教練課用) -->
     <div id="nameInputSection" class="w-full hidden flex flex-col items-center">
       <div class="w-full bg-slate-900/90 border-2 border-indigo-500/50 rounded-3xl p-6 sm:p-7 mb-4 text-center shadow-lg">
         <div class="text-xs text-indigo-300 font-bold mb-3 tracking-wider">🏋️ 教練課程點數查詢</div>
@@ -226,7 +226,7 @@
   </div>
 
   <script>
-    // 已完整帶入專屬 Firebase 金鑰
+    // 您的專屬 Firebase 金鑰
     const firebaseConfig = {
       apiKey: "AIzaSyCZUdxfTH4k0SpBuYtssd44aisSr1IfrSI",
       authDomain: "gkgym-b9973.firebaseapp.com",
@@ -255,19 +255,21 @@
       isCloudReady = true;
       setupCloudListeners();
     } catch (e) {
-      console.error(e);
+      console.error("Firebase 初始化失敗:", e);
       document.getElementById('cloudStatusText').innerText = "連線配置檢查中";
     }
 
     function setupCloudListeners() {
+      // 1. 會員名冊監聽
       db.collection("gk_gym").doc("members_data").onSnapshot(doc => {
         if (doc.exists) {
           members = doc.data().list || {};
           updateCounters();
           renderMemberList();
         }
-      });
+      }, err => console.error("名冊同步異常:", err));
 
+      // 2. 教練課堂數庫存與去重指紋監聽
       db.collection("gk_gym").doc("pt_pool_data").onSnapshot(doc => {
         if (doc.exists) {
           ptPool = doc.data().list || {};
@@ -275,23 +277,23 @@
           updateCounters();
           renderPtPool();
         }
-      });
+      }, err => console.error("課程庫存同步異常:", err));
 
+      // 3. 核銷紀錄日誌監聽
       db.collection("gk_gym").doc("logs_data").onSnapshot(doc => {
         if (doc.exists) {
           checkinLogs = doc.data().list || [];
           renderRecentLogs();
         }
-      });
+      }, err => console.error("日誌同步異常:", err));
     }
 
-    async function syncToCloud(collectionKey, dataPayload) {
+    // 背景靜默寫入雲端函式
+    function syncToCloud(collectionKey, dataPayload) {
       if (!isCloudReady) return;
-      try {
-        await db.collection("gk_gym").doc(collectionKey).set(dataPayload);
-      } catch (err) {
-        console.error("雲端寫入失敗:", err);
-      }
+      db.collection("gk_gym").doc(collectionKey).set(dataPayload).catch(err => {
+        console.error("雲端背景寫入失敗:", err);
+      });
     }
 
     function cleanPersonName(raw) {
@@ -380,7 +382,8 @@
       document.getElementById('ptNameInput').value = '';
     }
 
-    async function verifyCheckin() {
+    // 零延遲樂觀打卡核銷
+    function verifyCheckin() {
       if (currentPhone.length !== 10 || !currentPhone.startsWith('09')) {
         alert('請輸入正確的 10 碼手機號碼 (09開頭)');
         return;
@@ -403,6 +406,7 @@
         if (thisWeekLog) {
           showResultModal('CHECKIN_BLOCKED', { member, log: thisWeekLog });
         } else {
+          // 1. 本地立即記錄
           checkinLogs.unshift({
             phone,
             name: member.name,
@@ -411,8 +415,10 @@
             week: currentWeek,
             timestamp: now.toLocaleString('zh-TW', { hour12: false })
           });
-          await syncToCloud('logs_data', { list: checkinLogs });
+          // 2. 瞬間跳出成功畫面（0 毫秒延遲）
           showResultModal('CHECKIN_SUCCESS', { member });
+          // 3. 背景自動同步
+          syncToCloud('logs_data', { list: checkinLogs });
         }
       } else if (currentTask === 'INBODY') {
         const testedLog = checkinLogs.find(l => l.phone === phone && l.type === 'INBODY');
@@ -420,7 +426,6 @@
           showResultModal('INBODY_BLOCKED', { member, log: testedLog });
         } else {
           member.bodyTested = true;
-          await syncToCloud('members_data', { list: members });
           checkinLogs.unshift({
             phone,
             name: member.name,
@@ -429,8 +434,9 @@
             week: currentWeek,
             timestamp: now.toLocaleString('zh-TW', { hour12: false })
           });
-          await syncToCloud('logs_data', { list: checkinLogs });
           showResultModal('INBODY_SUCCESS', { member });
+          syncToCloud('members_data', { list: members });
+          syncToCloud('logs_data', { list: checkinLogs });
         }
       }
 
@@ -491,7 +497,8 @@
       showResultModal('PT_SUCCESS', { coach, name, points, key });
     }
 
-    async function claimPTPointsByKey(key, coach, name, points) {
+    // 零延遲教練課核銷
+    function claimPTPointsByKey(key, coach, name, points) {
       const now = new Date();
       const currentWeek = getCurrentISOWeek();
 
@@ -504,11 +511,14 @@
         timestamp: now.toLocaleString('zh-TW', { hour12: false })
       });
 
+      // 1. 本地立即扣除與關閉
       delete ptPool[key];
-      await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
-      await syncToCloud('logs_data', { list: checkinLogs });
-
+      updateCounters();
       closeResultModal();
+
+      // 2. 背景默默同步
+      syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+      syncToCloud('logs_data', { list: checkinLogs });
     }
 
     function showResultModal(status, data) {
@@ -629,20 +639,43 @@
       renderRecentLogs();
     }
 
-    async function saveQuickMember() {
-      const name = cleanPersonName(document.getElementById('newMemberName').value.trim());
-      const phone = document.getElementById('newMemberPhone').value.trim();
+    // 零延遲現場建檔
+    function saveQuickMember() {
+      const nameInput = document.getElementById('newMemberName');
+      const phoneInput = document.getElementById('newMemberPhone');
+      
+      const name = cleanPersonName(nameInput.value.trim());
+      let phone = phoneInput.value.trim().replace(/[^0-9]/g, '');
 
-      if (!name || phone.length !== 10) {
-        alert('請完整填寫顧客姓名與正確 10 碼電話');
+      if (phone.length === 9 && phone.startsWith('9')) {
+        phone = '0' + phone;
+      }
+
+      if (!name) {
+        alert('請填寫顧客姓名！');
+        nameInput.focus();
         return;
       }
 
+      if (phone.length !== 10 || !phone.startsWith('09')) {
+        alert('請輸入正確的 10 碼手機號碼（09開頭）');
+        phoneInput.focus();
+        return;
+      }
+
+      // 1. 本地立即更新介面
       members[phone] = { name, phone, bodyTested: false };
-      await syncToCloud('members_data', { list: members });
+      updateCounters();
+      renderMemberList();
+
       closeModal('quickAddModal');
-      document.getElementById('newMemberName').value = '';
-      document.getElementById('newMemberPhone').value = '';
+      nameInput.value = '';
+      phoneInput.value = '';
+
+      alert(`✅ 建檔成功！\n姓名：${name}\n電話：${phone}\n資料已寫入系統並同步。`);
+
+      // 2. 背景靜默同步
+      syncToCloud('members_data', { list: members });
     }
 
     function openEditModal(phone) {
@@ -654,7 +687,7 @@
       openModal('editMemberModal');
     }
 
-    async function saveEditedMember() {
+    function saveEditedMember() {
       const oldPhone = document.getElementById('editOriginalPhone').value;
       const newName = cleanPersonName(document.getElementById('editMemberName').value.trim());
       let newPhone = document.getElementById('editMemberPhone').value.trim().replace(/[^0-9]/g, '');
@@ -678,7 +711,6 @@
         phone: newPhone,
         bodyTested: oldData.bodyTested || false
       };
-      await syncToCloud('members_data', { list: members });
 
       checkinLogs.forEach(l => {
         if (l.phone === oldPhone) {
@@ -686,14 +718,17 @@
           l.name = newName;
         }
       });
-      await syncToCloud('logs_data', { list: checkinLogs });
 
       closeModal('editMemberModal');
       renderMemberList();
       renderRecentLogs();
+      alert(`會員資料修改成功！`);
+
+      syncToCloud('members_data', { list: members });
+      syncToCloud('logs_data', { list: checkinLogs });
     }
 
-    async function deleteMember(phone) {
+    function deleteMember(phone) {
       const m = members[phone];
       if (!m) return;
 
@@ -704,8 +739,9 @@
       }
 
       delete members[phone];
-      await syncToCloud('members_data', { list: members });
+      updateCounters();
       renderMemberList();
+      syncToCloud('members_data', { list: members });
     }
 
     function renderMemberList() {
@@ -765,7 +801,7 @@
       }).join('');
     }
 
-    async function clearPtPool() {
+    function clearPtPool() {
       const inputPin = prompt('【高風險安全驗證】\n即將清空所有「教練課未領取堂數庫存」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
         if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
@@ -775,12 +811,13 @@
       if (confirm('PIN 碼正確。請再次確認：確定要將所有教練課堂數庫存歸零嗎？')) {
         ptPool = {};
         processedSessions = [];
-        await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+        updateCounters();
         renderPtPool();
+        syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
       }
     }
 
-    async function clearAllData() {
+    function clearAllData() {
       const inputPin = prompt('【極度危險安全驗證】\n即將永久清空「所有會員名冊、打卡紀錄、教練課點數」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
         if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
@@ -792,9 +829,9 @@
         checkinLogs = [];
         ptPool = {};
         processedSessions = [];
-        await syncToCloud('members_data', { list: members });
-        await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
-        await syncToCloud('logs_data', { list: checkinLogs });
+        syncToCloud('members_data', { list: members });
+        syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+        syncToCloud('logs_data', { list: checkinLogs });
         location.reload();
       }
     }
@@ -805,7 +842,7 @@
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = async function(evt) {
+      reader.onload = function(evt) {
         try {
           const data = new Uint8Array(evt.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
@@ -850,8 +887,9 @@
             }
           }
 
-          await syncToCloud('members_data', { list: members });
+          updateCounters();
           renderMemberList();
+          syncToCloud('members_data', { list: members });
           alert(`會員名冊匯入成功！已更新 ${importedCount} 筆會員資料至雲端。`);
         } catch (err) {
           alert('Excel 讀取失敗，請確認檔案格式是否正確。');
@@ -866,7 +904,7 @@
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = async function(evt) {
+      reader.onload = function(evt) {
         try {
           const data = new Uint8Array(evt.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
@@ -910,7 +948,7 @@
             const row = rows[i];
             if (!row || row.length === 0) continue;
 
-            // 私教
+            // 私教軌道
             const time1 = row[timeColIdx1] !== undefined ? String(row[timeColIdx1]).trim() : '';
             const rawCoach1 = row[coachColIdx1] !== undefined ? String(row[coachColIdx1]).trim() : '';
             const rawName1 = row[nameColIdx1] !== undefined ? String(row[nameColIdx1]).trim() : '';
@@ -931,7 +969,7 @@
               }
             }
 
-            // 小班制
+            // 小班制軌道
             const time2 = row[timeColIdx2] !== undefined ? String(row[timeColIdx2]).trim() : '';
             const rawCoach2 = row[coachColIdx2] !== undefined ? String(row[coachColIdx2]).trim() : '';
             const rawName2 = row[nameColIdx2] !== undefined ? String(row[nameColIdx2]).trim() : '';
@@ -953,8 +991,9 @@
             }
           }
 
-          await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+          updateCounters();
           renderPtPool();
+          syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
 
           let msg = `教練課簽到表已同步至雲端！\n• 私教新增：${newAddedPrivate} 堂\n• 小班制新增：${newAddedGroup} 堂`;
           if (skippedDuplicates > 0) {
