@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>成吉思汗 感謝祭・會員集點查驗系統</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Firebase 雲端同步核心庫 -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <style>
+    body { user-select: none; -webkit-user-select: none; }
+    .kiosk-btn { transition: all 0.08s ease-in-out; }
+    .kiosk-btn:active { transform: scale(0.96); filter: brightness(1.2); }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    input { user-select: text; -webkit-user-select: text; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between p-4 sm:p-6 font-sans">
+
+  <!-- 頂部黑金精簡品牌列 -->
+  <header class="flex justify-between items-center bg-slate-900/90 px-5 py-3.5 rounded-2xl border border-slate-800 shadow-xl">
+    <div class="flex items-center gap-3">
+      <div id="cloudStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+      <div>
+        <h1 class="text-base sm:text-lg font-black tracking-wide text-amber-400">成吉思汗 感謝祭</h1>
+        <p class="text-[11px] text-slate-400 font-medium tracking-wider">
+          <span id="cloudStatusText" class="text-emerald-400">雲端連線中</span>・會員集點查驗機
+        </p>
+      </div>
+    </div>
+    <!-- 櫃檯管理入口 -->
+    <div class="flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity">
+      <button onclick="openModal('quickAddModal')" title="現場建檔" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl text-xs flex items-center gap-1">
+        <span>👤</span><span class="hidden sm:inline text-[11px]">建檔</span>
+      </button>
+      <button onclick="openAdminModal()" title="後台管理" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl text-xs flex items-center gap-1">
+        <span>⚙</span><span class="hidden sm:inline text-[11px]">後台</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 中間主要操作區 -->
+  <main class="max-w-md w-full mx-auto my-auto flex flex-col items-center">
+    
+    <!-- 任務標籤 -->
+    <div class="grid grid-cols-3 gap-2.5 w-full mb-4">
+      <button id="taskCheckinBtn" onclick="setTaskType('CHECKIN')" class="py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-amber-400 to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20">
+        📍 運動打卡<br><span class="text-[10px] font-semibold opacity-90">每週限領 1 次</span>
+      </button>
+      <button id="taskPTBtn" onclick="setTaskType('PT')" class="py-3 rounded-2xl font-bold text-xs sm:text-sm bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-700">
+        🏋️ 教練課程<br><span class="text-[10px] font-normal opacity-80">上課堂數集點</span>
+      </button>
+      <button id="taskInbodyBtn" onclick="setTaskType('INBODY')" class="py-3 rounded-2xl font-bold text-xs sm:text-sm bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-700">
+        ⚖ 身體檢測<br><span class="text-[10px] font-normal opacity-80">本檔期限 1 次</span>
+      </button>
+    </div>
+
+    <!-- 情況一：手機輸入與數字鍵盤 -->
+    <div id="phoneInputSection" class="w-full">
+      <div class="w-full bg-slate-900/90 border-2 border-slate-800 rounded-3xl p-4 sm:p-5 mb-4 text-center shadow-inner">
+        <div class="text-xs text-slate-400 mb-1.5 font-medium" id="inputSubtitle">請輸入您的手機號碼以核對身份</div>
+        <div id="phoneDisplay" class="text-3xl sm:text-4xl font-mono font-bold tracking-widest text-amber-400 h-10 flex items-center justify-center">
+          <span class="text-slate-600 font-sans text-xl sm:text-2xl font-normal">09xx-xxx-xxx</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2.5 w-full">
+        <button onclick="pressKey('1')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">1</button>
+        <button onclick="pressKey('2')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">2</button>
+        <button onclick="pressKey('3')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">3</button>
+        <button onclick="pressKey('4')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">4</button>
+        <button onclick="pressKey('5')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">5</button>
+        <button onclick="pressKey('6')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">6</button>
+        <button onclick="pressKey('7')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">7</button>
+        <button onclick="pressKey('8')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">8</button>
+        <button onclick="pressKey('9')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">9</button>
+        <button onclick="clearPhone()" class="kiosk-btn bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 text-base font-bold py-4 rounded-2xl border border-rose-900/60 shadow-md">清除</button>
+        <button onclick="pressKey('0')" class="kiosk-btn bg-slate-900 hover:bg-slate-850 text-2xl font-bold py-4 rounded-2xl border border-slate-800 shadow-md">0</button>
+        <button onclick="verifyCheckin()" class="kiosk-btn bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-lg font-black py-4 rounded-2xl shadow-lg shadow-emerald-950">確認</button>
+      </div>
+    </div>
+
+    <!-- 情況二：姓名輸入框 -->
+    <div id="nameInputSection" class="w-full hidden flex flex-col items-center">
+      <div class="w-full bg-slate-900/90 border-2 border-indigo-500/50 rounded-3xl p-6 sm:p-7 mb-4 text-center shadow-lg">
+        <div class="text-xs text-indigo-300 font-bold mb-3 tracking-wider">🏋️ 教練課程點數查詢</div>
+        <input id="ptNameInput" type="text" placeholder="請點此鍵入學員姓名" class="w-full bg-slate-950 border-2 border-indigo-500 rounded-2xl px-4 py-4 text-center text-2xl font-bold text-white tracking-widest outline-none focus:border-amber-400 placeholder:text-slate-600 placeholder:text-base placeholder:tracking-normal shadow-inner">
+        <p class="text-[12px] text-slate-400 mt-3 font-normal">請直接輸入您的中文本名即可查詢</p>
+      </div>
+
+      <div class="flex gap-2.5 w-full">
+        <button onclick="clearPtName()" class="w-1/3 py-4 rounded-2xl bg-slate-900 border border-slate-800 font-bold text-slate-300 kiosk-btn shadow-md">清空</button>
+        <button onclick="verifyPTByName()" class="w-2/3 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 font-black text-lg text-white shadow-xl shadow-indigo-950 kiosk-btn">查詢領取資格</button>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="text-center text-[11px] text-slate-600 py-1">
+    成吉思汗健身俱樂部・感謝祭專屬活動
+  </footer>
+
+  <!-- 撞名選擇教練視窗 -->
+  <div id="coachSelectModal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-indigo-500/60 rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl">
+      <div class="w-12 h-12 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center text-2xl mx-auto mb-3">👥</div>
+      <h3 class="text-lg font-bold text-white mb-1">請選擇您的授課教練</h3>
+      <p class="text-xs text-slate-400 mb-4">學員姓名：<span id="dupStudentName" class="text-amber-400 font-bold"></span></p>
+      <div id="coachOptionsList" class="space-y-2 mb-4"></div>
+      <button onclick="closeModal('coachSelectModal')" class="w-full py-2.5 rounded-xl bg-slate-800 text-slate-400 text-xs font-bold">取消返回</button>
+    </div>
+  </div>
+
+  <!-- 查核結果大畫面 -->
+  <div id="resultOverlay" class="fixed inset-0 bg-slate-950/95 z-50 hidden flex flex-col items-center justify-center p-4 sm:p-6 text-center">
+    <div id="resultContent" class="max-w-md w-full bg-slate-900 border-2 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl"></div>
+  </div>
+
+  <!-- 現場快速建檔 Modal -->
+  <div id="quickAddModal" class="fixed inset-0 bg-black/85 z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+      <h3 class="text-lg font-bold text-white mb-1">現場快速建檔</h3>
+      <p class="text-xs text-slate-400 mb-4">新辦理會籍之會員，手動建檔後立即同步雲端。</p>
+      <div class="space-y-3 mb-5">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">顧客姓名</label>
+          <input id="newMemberName" type="text" placeholder="例：陳詳鵬" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-amber-400">
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">手機號碼 (10 碼)</label>
+          <input id="newMemberPhone" type="tel" maxlength="10" placeholder="09xxxxxxxx" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono text-sm outline-none focus:border-amber-400">
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeModal('quickAddModal')" class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-sm font-semibold">取消</button>
+        <button onclick="saveQuickMember()" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-sm shadow">確認建檔</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改現有會員資料 Modal -->
+  <div id="editMemberModal" class="fixed inset-0 bg-black/85 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+      <h3 class="text-lg font-bold text-white mb-1">修改會員資料</h3>
+      <p class="text-xs text-slate-400 mb-4">修正名冊中的姓名或手機號碼。</p>
+      <input type="hidden" id="editOriginalPhone">
+      <div class="space-y-3 mb-5">
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">顧客姓名</label>
+          <input id="editMemberName" type="text" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm">
+        </div>
+        <div>
+          <label class="text-xs text-slate-300 block mb-1">手機號碼 (10 碼)</label>
+          <input id="editMemberPhone" type="tel" maxlength="10" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-sm">
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="closeModal('editMemberModal')" class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-sm">取消</button>
+        <button onclick="saveEditedMember()" class="flex-1 py-2.5 rounded-xl bg-amber-500 font-bold text-slate-950 text-sm">儲存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 後台管理 Modal -->
+  <div id="adminModal" class="fixed inset-0 bg-black/85 z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto flex flex-col gap-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <div>
+          <h3 class="text-lg font-bold text-white">後台資料與名冊管理 (雲端即時同步)</h3>
+          <p class="text-xs text-slate-400">電腦匯入、平板即時生效，主管隨時可匯出</p>
+        </div>
+        <button onclick="closeModal('adminModal')" class="text-slate-400 hover:text-white text-xl p-1">✕</button>
+      </div>
+
+      <!-- 區塊一：匯入全店會員名冊 -->
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+        <h4 class="text-sm font-bold text-amber-400 mb-1">1. 匯入公司會員名冊 (打卡用)</h4>
+        <p class="text-xs text-slate-400 mb-2">自動讀取「顧客名稱」與「手機」，過濾後綴並同步寫入雲端。</p>
+        <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
+      </div>
+
+      <!-- 區塊二：匯入教練課簽到報表 -->
+      <div class="bg-slate-950 p-4 rounded-2xl border border-indigo-900/50">
+        <h4 class="text-sm font-bold text-indigo-400 mb-1">2. 匯入教練課簽到報表 (含私教+小班制)</h4>
+        <p class="text-xs text-slate-400 mb-2">雙軌讀取並綁定「簽到時間指紋」，重複或重疊檔案匯入自動去重！</p>
+        <input type="file" id="excelPTFileInput" accept=".xlsx, .xls, .csv" class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer">
+      </div>
+
+      <!-- 教練課待領庫存 -->
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="text-sm font-bold text-indigo-300">雲端教練課待領堂數 (<span id="ptPoolCountLabel">0</span> 筆)</h4>
+          <button onclick="clearPtPool()" class="text-[10px] text-rose-400 hover:text-rose-300 font-bold border border-rose-800/60 px-2 py-0.5 rounded">🔒 清空堂數庫存</button>
+        </div>
+        <div id="ptPoolContainer" class="max-h-36 overflow-y-auto space-y-1.5 pr-1 text-xs"></div>
+      </div>
+
+      <!-- 一般打卡會員名冊 -->
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+        <div class="flex justify-between items-center mb-2">
+          <h4 class="text-sm font-bold text-emerald-400">雲端會員名冊 (<span id="memberCountLabel">0</span>)</h4>
+        </div>
+        <input id="memberSearchInput" oninput="renderMemberList()" type="text" placeholder="搜尋顧客名稱或電話末碼..." class="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white mb-2">
+        <div id="memberListContainer" class="max-h-36 overflow-y-auto space-y-1.5 pr-1"></div>
+      </div>
+
+      <!-- 匯出與危險按鈕 -->
+      <div class="flex gap-2">
+        <button onclick="exportLogsCSV()" class="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-200">
+          匯出所有即時核銷紀錄 (.csv)
+        </button>
+        <button onclick="clearAllData()" class="py-2.5 px-3 bg-rose-950/40 border border-rose-800 text-rose-300 rounded-xl text-xs font-bold">
+          🔒 清空所有資料
+        </button>
+      </div>
+
+      <!-- 最近核銷日誌 -->
+      <div>
+        <div class="text-xs font-bold text-slate-400 mb-2">最新核銷紀錄 (即時推播最近 5 筆)</div>
+        <div id="recentLogsList" class="space-y-1.5 text-xs"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 已完整帶入專屬 Firebase 金鑰
+    const firebaseConfig = {
+      apiKey: "AIzaSyCZUdxfTH4k0SpBuYtssd44aisSr1IfrSI",
+      authDomain: "gkgym-b9973.firebaseapp.com",
+      projectId: "gkgym-b9973",
+      storageBucket: "gkgym-b9973.firebasestorage.app",
+      messagingSenderId: "1037818637469",
+      appId: "1:1037818637469:web:89e36b5e537da10c10f874"
+    };
+
+    const SECURITY_PIN = "GK20261031";
+
+    let db;
+    let isCloudReady = false;
+
+    let members = {};
+    let checkinLogs = [];
+    let ptPool = {};
+    let processedSessions = [];
+
+    let currentTask = 'CHECKIN';
+    let currentPhone = '';
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      isCloudReady = true;
+      setupCloudListeners();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('cloudStatusText').innerText = "連線配置檢查中";
+    }
+
+    function setupCloudListeners() {
+      db.collection("gk_gym").doc("members_data").onSnapshot(doc => {
+        if (doc.exists) {
+          members = doc.data().list || {};
+          updateCounters();
+          renderMemberList();
+        }
+      });
+
+      db.collection("gk_gym").doc("pt_pool_data").onSnapshot(doc => {
+        if (doc.exists) {
+          ptPool = doc.data().list || {};
+          processedSessions = doc.data().sessions || [];
+          updateCounters();
+          renderPtPool();
+        }
+      });
+
+      db.collection("gk_gym").doc("logs_data").onSnapshot(doc => {
+        if (doc.exists) {
+          checkinLogs = doc.data().list || [];
+          renderRecentLogs();
+        }
+      });
+    }
+
+    async function syncToCloud(collectionKey, dataPayload) {
+      if (!isCloudReady) return;
+      try {
+        await db.collection("gk_gym").doc(collectionKey).set(dataPayload);
+      } catch (err) {
+        console.error("雲端寫入失敗:", err);
+      }
+    }
+
+    function cleanPersonName(raw) {
+      if (!raw) return '';
+      let s = String(raw).trim();
+      s = s.replace(/[\(（\[【][^\)）\]】]*[\)）\]】]/g, '');
+      s = s.replace(/[-_~–—].*$/g, '');
+      s = s.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+      return s.trim();
+    }
+
+    function updateCounters() {
+      const mCount = Object.keys(members).length;
+      const pCount = Object.keys(ptPool).length;
+      const mlbl = document.getElementById('memberCountLabel');
+      if (mlbl) mlbl.innerText = mCount;
+      const plbl = document.getElementById('ptPoolCountLabel');
+      if (plbl) plbl.innerText = pCount;
+    }
+
+    function getCurrentISOWeek() {
+      const now = new Date();
+      const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+      return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+    }
+
+    function setTaskType(type) {
+      currentTask = type;
+      const checkinBtn = document.getElementById('taskCheckinBtn');
+      const ptBtn = document.getElementById('taskPTBtn');
+      const inbodyBtn = document.getElementById('taskInbodyBtn');
+      const phoneSec = document.getElementById('phoneInputSection');
+      const nameSec = document.getElementById('nameInputSection');
+
+      const normalClass = "py-3 rounded-2xl font-bold text-xs sm:text-sm bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-700";
+      
+      checkinBtn.className = normalClass;
+      ptBtn.className = normalClass;
+      inbodyBtn.className = normalClass;
+
+      if (type === 'CHECKIN') {
+        checkinBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-amber-400 to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20";
+        phoneSec.classList.remove('hidden');
+        nameSec.classList.add('hidden');
+        document.getElementById('inputSubtitle').innerText = "請輸入您的手機號碼以核對身份";
+      } else if (type === 'PT') {
+        ptBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-600/20";
+        phoneSec.classList.add('hidden');
+        nameSec.classList.remove('hidden');
+        document.getElementById('ptNameInput').focus();
+      } else {
+        inbodyBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-teal-400 to-teal-500 text-slate-950 shadow-lg shadow-teal-500/20";
+        phoneSec.classList.remove('hidden');
+        nameSec.classList.add('hidden');
+        document.getElementById('inputSubtitle').innerText = "請輸入手機號碼查驗身體檢測資格";
+      }
+      clearPhone();
+    }
+
+    function pressKey(k) {
+      if (currentPhone.length < 10) {
+        currentPhone += k;
+        renderPhone();
+      }
+    }
+
+    function clearPhone() {
+      currentPhone = '';
+      renderPhone();
+    }
+
+    function renderPhone() {
+      const el = document.getElementById('phoneDisplay');
+      if (!currentPhone) {
+        el.innerHTML = '<span class="text-slate-600 font-sans text-xl sm:text-2xl font-normal">09xx-xxx-xxx</span>';
+      } else {
+        el.innerText = currentPhone;
+      }
+    }
+
+    function clearPtName() {
+      document.getElementById('ptNameInput').value = '';
+    }
+
+    async function verifyCheckin() {
+      if (currentPhone.length !== 10 || !currentPhone.startsWith('09')) {
+        alert('請輸入正確的 10 碼手機號碼 (09開頭)');
+        return;
+      }
+
+      const phone = currentPhone;
+      const member = members[phone];
+
+      if (!member) {
+        showResultModal('NOT_FOUND', { phone });
+        clearPhone();
+        return;
+      }
+
+      const now = new Date();
+      const currentWeek = getCurrentISOWeek();
+
+      if (currentTask === 'CHECKIN') {
+        const thisWeekLog = checkinLogs.find(l => l.phone === phone && l.type === 'CHECKIN' && l.week === currentWeek);
+        if (thisWeekLog) {
+          showResultModal('CHECKIN_BLOCKED', { member, log: thisWeekLog });
+        } else {
+          checkinLogs.unshift({
+            phone,
+            name: member.name,
+            type: 'CHECKIN',
+            points: 1,
+            week: currentWeek,
+            timestamp: now.toLocaleString('zh-TW', { hour12: false })
+          });
+          await syncToCloud('logs_data', { list: checkinLogs });
+          showResultModal('CHECKIN_SUCCESS', { member });
+        }
+      } else if (currentTask === 'INBODY') {
+        const testedLog = checkinLogs.find(l => l.phone === phone && l.type === 'INBODY');
+        if (testedLog || member.bodyTested) {
+          showResultModal('INBODY_BLOCKED', { member, log: testedLog });
+        } else {
+          member.bodyTested = true;
+          await syncToCloud('members_data', { list: members });
+          checkinLogs.unshift({
+            phone,
+            name: member.name,
+            type: 'INBODY',
+            points: 1,
+            week: currentWeek,
+            timestamp: now.toLocaleString('zh-TW', { hour12: false })
+          });
+          await syncToCloud('logs_data', { list: checkinLogs });
+          showResultModal('INBODY_SUCCESS', { member });
+        }
+      }
+
+      clearPhone();
+    }
+
+    function verifyPTByName() {
+      const rawInput = document.getElementById('ptNameInput').value.trim();
+      const cleanInput = cleanPersonName(rawInput);
+
+      if (!cleanInput) {
+        alert('請輸入學員姓名！');
+        return;
+      }
+
+      const matchedKeys = [];
+      for (let k in ptPool) {
+        const parts = k.split('___');
+        const coach = parts[0];
+        const student = parts[1];
+        if (student === cleanInput && ptPool[k] > 0) {
+          matchedKeys.push({ key: k, coach: coach, name: student, points: ptPool[k] });
+        }
+      }
+
+      if (matchedKeys.length === 0) {
+        showResultModal('PT_EMPTY', { name: cleanInput });
+        clearPtName();
+      } else if (matchedKeys.length === 1) {
+        const target = matchedKeys[0];
+        showResultModal('PT_SUCCESS', { coach: target.coach, name: target.name, points: target.points, key: target.key });
+        clearPtName();
+      } else {
+        promptCoachSelection(cleanInput, matchedKeys);
+      }
+    }
+
+    function promptCoachSelection(studentName, matchedList) {
+      document.getElementById('dupStudentName').innerText = studentName;
+      const listContainer = document.getElementById('coachOptionsList');
+      
+      listContainer.innerHTML = matchedList.map(item => `
+        <button onclick="selectCoachAndProceed('${item.key}', '${item.coach}', '${item.name}', ${item.points})" class="w-full p-3.5 bg-slate-800 hover:bg-indigo-900/60 border border-slate-700 hover:border-indigo-500 rounded-2xl flex justify-between items-center transition text-left">
+          <div>
+            <div class="text-sm font-bold text-white">${item.coach} 教練</div>
+            <div class="text-[11px] text-slate-400">學員：${item.name}</div>
+          </div>
+          <span class="px-2.5 py-1 bg-amber-500/20 text-amber-300 font-bold text-xs rounded-lg">可領 ${item.points} 點</span>
+        </button>
+      `).join('');
+
+      openModal('coachSelectModal');
+    }
+
+    function selectCoachAndProceed(key, coach, name, points) {
+      closeModal('coachSelectModal');
+      clearPtName();
+      showResultModal('PT_SUCCESS', { coach, name, points, key });
+    }
+
+    async function claimPTPointsByKey(key, coach, name, points) {
+      const now = new Date();
+      const currentWeek = getCurrentISOWeek();
+
+      checkinLogs.unshift({
+        phone: `${coach}教練`,
+        name: name,
+        type: 'PT',
+        points: points,
+        week: currentWeek,
+        timestamp: now.toLocaleString('zh-TW', { hour12: false })
+      });
+
+      delete ptPool[key];
+      await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+      await syncToCloud('logs_data', { list: checkinLogs });
+
+      closeResultModal();
+    }
+
+    function showResultModal(status, data) {
+      const overlay = document.getElementById('resultOverlay');
+      const box = document.getElementById('resultContent');
+      let html = '';
+
+      if (status === 'CHECKIN_SUCCESS') {
+        box.className = "max-w-md w-full bg-slate-900 border-2 border-emerald-500 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center text-3xl mb-3 shadow-[0_0_15px_rgba(52,211,153,0.3)]">✔</div>
+          <span class="bg-emerald-500 text-slate-950 font-black text-xs px-3 py-1 rounded-full mb-2">資格核對成功</span>
+          <h2 class="text-2xl sm:text-3xl font-black text-emerald-400 mb-1">運動打卡通過！</h2>
+          <p class="text-xl font-bold text-white mb-4">${data.member.name} (${maskPhone(data.member.phone)})</p>
+          <div class="p-4 bg-slate-950 border border-emerald-500/30 rounded-2xl w-full mb-6 text-center">
+            <p class="text-emerald-300 font-bold text-base sm:text-lg">👉 請出示紙本 LINE QR CODE 掃描 1 次</p>
+            <p class="text-[11px] text-slate-400 mt-1">本週額度已核銷，下週一方可再次領取</p>
+          </div>
+          <button onclick="closeResultModal()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-base font-black rounded-2xl shadow-lg">確認完成・返回</button>
+        `;
+      } else if (status === 'CHECKIN_BLOCKED') {
+        box.className = "max-w-md w-full bg-slate-900 border border-slate-750 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center text-3xl mb-3">🗓</div>
+          <span class="bg-amber-500/20 text-amber-300 font-bold text-xs px-3 py-1 rounded-full mb-2">每週限領一次</span>
+          <h2 class="text-xl sm:text-2xl font-bold text-white mb-1">您本週已經完成打卡囉！</h2>
+          <p class="text-base font-bold text-amber-400 mb-4">${data.member.name} 會員您好</p>
+          <div class="p-4 bg-slate-950 rounded-2xl w-full mb-6 text-center space-y-1.5 border border-slate-800">
+            <p class="text-xs sm:text-sm text-slate-300">感謝您的熱情參與！本週運動打卡點數已為您發放完畢。</p>
+            <div class="text-[11px] text-slate-500">上次打卡：${data.log.timestamp}</div>
+            <div class="text-[11px] text-indigo-400 font-semibold pt-1">✨ 下週一將自動重置額度，歡迎下週再來運動！</div>
+          </div>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl">好的，我知道了</button>
+        `;
+      } else if (status === 'PT_SUCCESS') {
+        box.className = "max-w-md w-full bg-slate-900 border-2 border-indigo-500 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center text-3xl mb-3 shadow-[0_0_15px_rgba(99,102,241,0.3)]">🏋️</div>
+          <span class="bg-indigo-600 text-white font-black text-xs px-3 py-1 rounded-full mb-1">教練課程點數</span>
+          <div class="text-xs text-indigo-300 font-medium mb-1">授課教練：${data.coach} 教練</div>
+          <h2 class="text-2xl sm:text-3xl font-black text-white mb-1">${data.name} 學員</h2>
+          <div class="text-3xl sm:text-4xl font-black text-amber-400 my-2">可領取 ${data.points} 點</div>
+          <div class="p-4 bg-slate-950 border border-indigo-500/30 rounded-2xl w-full mb-6 text-center">
+            <p class="text-indigo-200 font-bold text-base">👉 請出示紙本 LINE QR CODE</p>
+            <p class="text-amber-400 font-black text-lg mt-1">供現場連續掃描 ${data.points} 次</p>
+          </div>
+          <button onclick="claimPTPointsByKey('${data.key}', '${data.coach}', '${data.name}', ${data.points})" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white text-base font-black rounded-2xl shadow-lg">確認已掃描完畢・核銷扣除</button>
+        `;
+      } else if (status === 'PT_EMPTY') {
+        box.className = "max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center text-3xl mb-3">🏋️</div>
+          <h2 class="text-xl sm:text-2xl font-bold text-white mb-1">目前查無待領點數</h2>
+          <p class="text-lg font-bold text-amber-400 mb-4">${data.name} 學員</p>
+          <div class="p-4 bg-slate-950 border border-slate-800 rounded-2xl w-full mb-6 text-center space-y-1.5">
+            <p class="text-xs sm:text-sm text-slate-300">您的教練課點數已全數領取，或近期上課紀錄尚在統計中。</p>
+            <p class="text-[11px] text-slate-500">簽到紀錄定期由主管匯入更新，更新後即可隨時至櫃檯領取！</p>
+          </div>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">返回</button>
+        `;
+      } else if (status === 'NOT_FOUND') {
+        box.className = "max-w-md w-full bg-slate-900 border border-amber-500/60 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center text-3xl mb-3">⚠</div>
+          <h2 class="text-xl sm:text-2xl font-black text-amber-400 mb-1">查無此會員電話</h2>
+          <p class="text-lg font-mono text-white mb-3">${data.phone}</p>
+          <p class="text-xs text-slate-400 mb-6 text-center">若為剛辦理會籍之新會員，請告知櫃檯服務人員協助建檔。</p>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">返回重試</button>
+        `;
+      } else if (status === 'INBODY_SUCCESS') {
+        box.className = "max-w-md w-full bg-slate-900 border-2 border-teal-500 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-teal-500/20 text-teal-400 rounded-full flex items-center justify-center text-3xl mb-3">⚖</div>
+          <h2 class="text-2xl sm:text-3xl font-black text-teal-400 mb-1">身體檢測核銷完成</h2>
+          <p class="text-xl font-bold text-white mb-4">${data.member.name} (${maskPhone(data.member.phone)})</p>
+          <div class="p-4 bg-slate-950 border border-teal-500/30 rounded-2xl w-full mb-6 text-center">
+            <p class="text-teal-300 font-bold text-base">👉 請出示紙本 LINE QR CODE 掃描 1 次</p>
+            <p class="text-[11px] text-slate-400 mt-1">此項目已核銷完畢，活動期間限領一次</p>
+          </div>
+          <button onclick="closeResultModal()" class="w-full py-3.5 bg-teal-600 hover:bg-teal-500 text-slate-950 font-black rounded-2xl">確認完成</button>
+        `;
+      } else if (status === 'INBODY_BLOCKED') {
+        box.className = "max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
+        html = `
+          <div class="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center text-3xl mb-3">⚖</div>
+          <span class="bg-amber-500/20 text-amber-300 font-bold text-xs px-3 py-1 rounded-full mb-2">活動期間限領一次</span>
+          <h2 class="text-xl sm:text-2xl font-bold text-white mb-1">身體檢測點數已領取過囉！</h2>
+          <p class="text-base font-bold text-amber-400 mb-4">${data.member.name} 會員您好</p>
+          <p class="text-xs sm:text-sm text-slate-300 mb-6 text-center">感謝您的參與！本活動身體檢測任務每人限集點一次，點數已發放完畢。</p>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">好的，我知道了</button>
+        `;
+      }
+
+      box.innerHTML = html;
+      overlay.classList.remove('hidden');
+    }
+
+    function closeResultModal() {
+      document.getElementById('resultOverlay').classList.add('hidden');
+    }
+
+    function maskPhone(p) {
+      return p.substring(0, 4) + '***' + p.substring(7);
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function openAdminModal() {
+      openModal('adminModal');
+      renderMemberList();
+      renderPtPool();
+      renderRecentLogs();
+    }
+
+    async function saveQuickMember() {
+      const name = cleanPersonName(document.getElementById('newMemberName').value.trim());
+      const phone = document.getElementById('newMemberPhone').value.trim();
+
+      if (!name || phone.length !== 10) {
+        alert('請完整填寫顧客姓名與正確 10 碼電話');
+        return;
+      }
+
+      members[phone] = { name, phone, bodyTested: false };
+      await syncToCloud('members_data', { list: members });
+      closeModal('quickAddModal');
+      document.getElementById('newMemberName').value = '';
+      document.getElementById('newMemberPhone').value = '';
+    }
+
+    function openEditModal(phone) {
+      const m = members[phone];
+      if (!m) return;
+      document.getElementById('editOriginalPhone').value = phone;
+      document.getElementById('editMemberName').value = m.name;
+      document.getElementById('editMemberPhone').value = m.phone;
+      openModal('editMemberModal');
+    }
+
+    async function saveEditedMember() {
+      const oldPhone = document.getElementById('editOriginalPhone').value;
+      const newName = cleanPersonName(document.getElementById('editMemberName').value.trim());
+      let newPhone = document.getElementById('editMemberPhone').value.trim().replace(/[^0-9]/g, '');
+
+      if (newPhone.length === 9 && newPhone.startsWith('9')) newPhone = '0' + newPhone;
+
+      if (!newName || newPhone.length !== 10 || !newPhone.startsWith('09')) {
+        alert('請輸入正確的顧客姓名與 10 碼手機號碼');
+        return;
+      }
+
+      if (newPhone !== oldPhone && members[newPhone]) {
+        alert('此新電話號碼已被其他會員使用！');
+        return;
+      }
+
+      const oldData = members[oldPhone] || {};
+      delete members[oldPhone];
+      members[newPhone] = {
+        name: newName,
+        phone: newPhone,
+        bodyTested: oldData.bodyTested || false
+      };
+      await syncToCloud('members_data', { list: members });
+
+      checkinLogs.forEach(l => {
+        if (l.phone === oldPhone) {
+          l.phone = newPhone;
+          l.name = newName;
+        }
+      });
+      await syncToCloud('logs_data', { list: checkinLogs });
+
+      closeModal('editMemberModal');
+      renderMemberList();
+      renderRecentLogs();
+    }
+
+    async function deleteMember(phone) {
+      const m = members[phone];
+      if (!m) return;
+
+      const inputPin = prompt(`【安全保護】確定要刪除「${m.name} (${phone})」嗎？\n請輸入管理員 PIN 碼：`);
+      if (inputPin !== SECURITY_PIN) {
+        if (inputPin !== null) alert('PIN 碼錯誤！取消刪除。');
+        return;
+      }
+
+      delete members[phone];
+      await syncToCloud('members_data', { list: members });
+      renderMemberList();
+    }
+
+    function renderMemberList() {
+      const container = document.getElementById('memberListContainer');
+      const keyword = (document.getElementById('memberSearchInput').value || '').trim();
+      const allPhones = Object.keys(members);
+
+      const filtered = allPhones.filter(p => {
+        const m = members[p];
+        return m.name.includes(keyword) || m.phone.includes(keyword);
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-500 py-3 text-center">查無相符名單</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(p => {
+        const m = members[p];
+        return `
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+            <div>
+              <span class="font-bold text-white">${m.name}</span>
+              <span class="font-mono text-slate-400 ml-1.5">${m.phone}</span>
+            </div>
+            <div class="flex gap-1.5">
+              <button onclick="openEditModal('${m.phone}')" class="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg">✏ 編輯</button>
+              <button onclick="deleteMember('${m.phone}')" class="px-2 py-1 bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 rounded-lg">🗑 刪除</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderPtPool() {
+      const container = document.getElementById('ptPoolContainer');
+      const keys = Object.keys(ptPool);
+      if (keys.length === 0) {
+        container.innerHTML = '<div class="text-slate-500 py-2 text-center">目前無待領取之教練課紀錄</div>';
+        return;
+      }
+
+      container.innerHTML = keys.map(k => {
+        const parts = k.split('___');
+        const coach = parts[0] || '未指定教練';
+        const name = parts[1] || '學員';
+        return `
+          <div class="bg-slate-900 p-2 rounded-xl border border-slate-800 flex justify-between items-center">
+            <div>
+              <span class="text-indigo-400 font-bold">${coach} 教練</span>
+              <span class="text-slate-500 mx-1">➜</span>
+              <span class="text-white font-bold">${name}</span>
+            </div>
+            <span class="px-2 py-0.5 bg-indigo-900/60 text-indigo-300 font-bold rounded">待領：${ptPool[k]} 點</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function clearPtPool() {
+      const inputPin = prompt('【高風險安全驗證】\n即將清空所有「教練課未領取堂數庫存」！\n請輸入管理員 PIN 碼：');
+      if (inputPin !== SECURITY_PIN) {
+        if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
+        return;
+      }
+
+      if (confirm('PIN 碼正確。請再次確認：確定要將所有教練課堂數庫存歸零嗎？')) {
+        ptPool = {};
+        processedSessions = [];
+        await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+        renderPtPool();
+      }
+    }
+
+    async function clearAllData() {
+      const inputPin = prompt('【極度危險安全驗證】\n即將永久清空「所有會員名冊、打卡紀錄、教練課點數」！\n請輸入管理員 PIN 碼：');
+      if (inputPin !== SECURITY_PIN) {
+        if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
+        return;
+      }
+
+      if (confirm('PIN 碼正確。最後一次確認：確定要抹除本系統所有紀錄嗎？(此操作不可復原)')) {
+        members = {};
+        checkinLogs = [];
+        ptPool = {};
+        processedSessions = [];
+        await syncToCloud('members_data', { list: members });
+        await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+        await syncToCloud('logs_data', { list: checkinLogs });
+        location.reload();
+      }
+    }
+
+    // 1. 匯入公司會員名冊
+    document.getElementById('excelFileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          if (rows.length < 2) {
+            alert('Excel 內容為空或無有效資料列');
+            return;
+          }
+
+          const headerRow = rows[0] || [];
+          let nameColIdx = 2;
+          let phoneColIdx = 3;
+
+          headerRow.forEach((h, idx) => {
+            const txt = String(h || '').trim();
+            if (txt.includes('顧客名稱') || txt.includes('姓名') || txt.toLowerCase().includes('name')) nameColIdx = idx;
+            if (txt.includes('手機') || txt.includes('電話') || txt.toLowerCase().includes('phone')) phoneColIdx = idx;
+          });
+
+          let importedCount = 0;
+
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length === 0) continue;
+
+            let rawName = row[nameColIdx] !== undefined ? String(row[nameColIdx]).trim() : '';
+            let rawPhone = row[phoneColIdx] !== undefined ? String(row[phoneColIdx]).trim() : '';
+
+            let name = cleanPersonName(rawName);
+            let phone = rawPhone.replace(/[^0-9]/g, '');
+            if (phone.length === 9 && phone.startsWith('9')) phone = '0' + phone;
+
+            if (phone.length === 10 && phone.startsWith('09')) {
+              if (!members[phone]) {
+                members[phone] = { name: name || '顧客', phone, bodyTested: false };
+              } else {
+                if (name) members[phone].name = name;
+              }
+              importedCount++;
+            }
+          }
+
+          await syncToCloud('members_data', { list: members });
+          renderMemberList();
+          alert(`會員名冊匯入成功！已更新 ${importedCount} 筆會員資料至雲端。`);
+        } catch (err) {
+          alert('Excel 讀取失敗，請確認檔案格式是否正確。');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    // 2. 匯入教練簽到表
+    document.getElementById('excelPTFileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          if (rows.length < 2) {
+            alert('教練課簽到報表為空');
+            return;
+          }
+
+          const headerRow = rows[0] || [];
+          let timeColIdx1 = 1;
+          let coachColIdx1 = 2;
+          let nameColIdx1 = 3;
+
+          let timeColIdx2 = 10;
+          let coachColIdx2 = 11;
+          let nameColIdx2 = 12;
+
+          headerRow.forEach((h, idx) => {
+            const txt = String(h || '').trim();
+            if (idx <= 8) {
+              if (txt.includes('簽到時間') || txt.includes('時間')) timeColIdx1 = idx;
+              if (txt.includes('教練')) coachColIdx1 = idx;
+              if (txt.includes('顧客') || txt.includes('姓名') || txt.includes('學員')) nameColIdx1 = idx;
+            } else {
+              if (txt.includes('簽到時間') || txt.includes('時間')) timeColIdx2 = idx;
+              if (txt.includes('教練')) coachColIdx2 = idx;
+              if (txt.includes('姓名') || txt.includes('顧客') || txt.includes('學員')) nameColIdx2 = idx;
+            }
+          });
+
+          let newAddedPrivate = 0;
+          let newAddedGroup = 0;
+          let skippedDuplicates = 0;
+
+          const sessionSet = new Set(processedSessions);
+
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length === 0) continue;
+
+            // 私教
+            const time1 = row[timeColIdx1] !== undefined ? String(row[timeColIdx1]).trim() : '';
+            const rawCoach1 = row[coachColIdx1] !== undefined ? String(row[coachColIdx1]).trim() : '';
+            const rawName1 = row[nameColIdx1] !== undefined ? String(row[nameColIdx1]).trim() : '';
+            const coach1 = cleanPersonName(rawCoach1);
+            const name1 = cleanPersonName(rawName1);
+
+            if (coach1 && name1) {
+              const fingerprint1 = `${time1}_${coach1}_${name1}`;
+
+              if (!sessionSet.has(fingerprint1)) {
+                const key1 = `${coach1}___${name1}`;
+                ptPool[key1] = (ptPool[key1] || 0) + 1;
+                sessionSet.add(fingerprint1);
+                processedSessions.push(fingerprint1);
+                newAddedPrivate++;
+              } else {
+                skippedDuplicates++;
+              }
+            }
+
+            // 小班制
+            const time2 = row[timeColIdx2] !== undefined ? String(row[timeColIdx2]).trim() : '';
+            const rawCoach2 = row[coachColIdx2] !== undefined ? String(row[coachColIdx2]).trim() : '';
+            const rawName2 = row[nameColIdx2] !== undefined ? String(row[nameColIdx2]).trim() : '';
+            const coach2 = cleanPersonName(rawCoach2);
+            const name2 = cleanPersonName(rawName2);
+
+            if (coach2 && name2) {
+              const fingerprint2 = `${time2}_${coach2}_${name2}`;
+
+              if (!sessionSet.has(fingerprint2)) {
+                const key2 = `${coach2}___${name2}`;
+                ptPool[key2] = (ptPool[key2] || 0) + 1;
+                sessionSet.add(fingerprint2);
+                processedSessions.push(fingerprint2);
+                newAddedGroup++;
+              } else {
+                skippedDuplicates++;
+              }
+            }
+          }
+
+          await syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+          renderPtPool();
+
+          let msg = `教練課簽到表已同步至雲端！\n• 私教新增：${newAddedPrivate} 堂\n• 小班制新增：${newAddedGroup} 堂`;
+          if (skippedDuplicates > 0) {
+            msg += `\n• 自動過濾已匯入過課程：${skippedDuplicates} 堂（防重複生效）`;
+          }
+          alert(msg);
+          closeModal('adminModal');
+        } catch (err) {
+          console.error(err);
+          alert('教練課簽到表讀取失敗，請確認檔案格式。');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function exportLogsCSV() {
+      if (checkinLogs.length === 0) {
+        alert('目前尚無任何核銷紀錄');
+        return;
+      }
+      let csvContent = "\uFEFF顧客名稱/識別,任務類型,發放點數,週別,核銷時間\n";
+      checkinLogs.forEach(l => {
+        let typeName = '運動打卡';
+        if (l.type === 'PT') typeName = '教練課程';
+        if (l.type === 'INBODY') typeName = '身體檢測';
+        csvContent += `"${l.name} (${l.phone})","${typeName}","${l.points || 1}","${l.week}","${l.timestamp}"\n`;
+      });
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `成吉思汗雲端核銷紀錄_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
+    }
+
+    function renderRecentLogs() {
+      const list = document.getElementById('recentLogsList');
+      if (checkinLogs.length === 0) {
+        list.innerHTML = '<div class="text-slate-500 py-2">尚未有領取紀錄</div>';
+        return;
+      }
+      list.innerHTML = checkinLogs.slice(0, 5).map(l => {
+        let badgeColor = 'bg-amber-500/20 text-amber-400';
+        let typeName = '運動打卡';
+        if (l.type === 'PT') {
+          badgeColor = 'bg-indigo-500/20 text-indigo-400';
+          typeName = `教練課 (${l.points || 1}點)`;
+        } else if (l.type === 'INBODY') {
+          badgeColor = 'bg-cyan-500/20 text-cyan-400';
+          typeName = '身體檢測';
+        }
+
+        return `
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center">
+            <div>
+              <span class="font-bold text-white">${l.name}</span>
+              <span class="text-slate-500 font-mono ml-1">(${l.phone.startsWith('09') ? maskPhone(l.phone) : l.phone})</span>
+              <div class="text-[10px] text-slate-500">${l.timestamp}</div>
+            </div>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md ${badgeColor}">
+              ${typeName}
+            </span>
+          </div>
+        `;
+      }).join('');
+    }
+  </script>
+</body>
+</html>
