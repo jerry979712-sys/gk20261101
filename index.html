@@ -58,10 +58,10 @@
       </button>
     </div>
 
-    <!-- 情況一：手機輸入與數字鍵盤 -->
+    <!-- 情況一：手機輸入與數字鍵盤（支援鍵盤與螢幕觸控） -->
     <div id="phoneInputSection" class="w-full">
       <div class="w-full bg-slate-900/90 border-2 border-slate-800 rounded-3xl p-4 sm:p-5 mb-4 text-center shadow-inner">
-        <div class="text-xs text-slate-400 mb-1.5 font-medium" id="inputSubtitle">請輸入您的手機號碼以核對身份</div>
+        <div class="text-xs text-slate-400 mb-1.5 font-medium" id="inputSubtitle">請輸入手機號碼（支援鍵盤直接打字 / Enter送出）</div>
         <div id="phoneDisplay" class="text-3xl sm:text-4xl font-mono font-bold tracking-widest text-amber-400 h-10 flex items-center justify-center">
           <span class="text-slate-600 font-sans text-xl sm:text-2xl font-normal">09xx-xxx-xxx</span>
         </div>
@@ -88,7 +88,7 @@
       <div class="w-full bg-slate-900/90 border-2 border-indigo-500/50 rounded-3xl p-6 sm:p-7 mb-4 text-center shadow-lg">
         <div class="text-xs text-indigo-300 font-bold mb-3 tracking-wider">🏋️ 教練課程點數查詢</div>
         <input id="ptNameInput" type="text" placeholder="請點此鍵入學員姓名" class="w-full bg-slate-950 border-2 border-indigo-500 rounded-2xl px-4 py-4 text-center text-2xl font-bold text-white tracking-widest outline-none focus:border-amber-400 placeholder:text-slate-600 placeholder:text-base placeholder:tracking-normal shadow-inner">
-        <p class="text-[12px] text-slate-400 mt-3 font-normal">請直接輸入您的中文本名即可查詢</p>
+        <p class="text-[12px] text-slate-400 mt-3 font-normal">請直接輸入您的中文本名即可查詢（支援鍵盤 Enter 送出）</p>
       </div>
 
       <div class="flex gap-2.5 w-full">
@@ -119,7 +119,7 @@
     <div id="resultContent" class="max-w-md w-full bg-slate-900 border-2 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl"></div>
   </div>
 
-  <!-- 現場快速建檔 Modal (已加入重複手機號碼攔截防呆) -->
+  <!-- 現場快速建檔 Modal -->
   <div id="quickAddModal" class="fixed inset-0 bg-black/85 z-40 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl">
       <h3 class="text-lg font-bold text-white mb-1">現場快速建檔</h3>
@@ -175,17 +175,17 @@
         <button onclick="closeModal('adminModal')" class="text-slate-400 hover:text-white text-xl p-1">✕</button>
       </div>
 
-      <!-- 區塊一：匯入全店會員名冊 -->
+      <!-- 區塊一：匯入全店會員名冊 (含防呆) -->
       <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
         <h4 class="text-sm font-bold text-amber-400 mb-1">1. 匯入公司會員名冊 (打卡用)</h4>
-        <p class="text-xs text-slate-400 mb-2">自動讀取「顧客名稱」與「手機」，過濾後綴並同步寫入雲端。</p>
+        <p class="text-xs text-slate-400 mb-2">自動讀取「顧客名稱」與「手機」，過濾後綴並同步寫入雲端（具備誤傳教練表攔截防呆）。</p>
         <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer">
       </div>
 
-      <!-- 區塊二：匯入教練課簽到報表 -->
+      <!-- 區塊二：匯入教練課簽到報表 (含防呆) -->
       <div class="bg-slate-950 p-4 rounded-2xl border border-indigo-900/50">
         <h4 class="text-sm font-bold text-indigo-400 mb-1">2. 匯入教練課簽到報表 (含私教+小班制)</h4>
-        <p class="text-xs text-slate-400 mb-2">雙軌讀取並綁定「簽到時間指紋」，重複或重疊檔案匯入自動去重！</p>
+        <p class="text-xs text-slate-400 mb-2">雙軌讀取並綁定簽到時間指紋，防重複生效（具備誤傳全店會員名冊全面阻擋防呆！）。</p>
         <input type="file" id="excelPTFileInput" accept=".xlsx, .xls, .csv" class="text-xs text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer">
       </div>
 
@@ -305,9 +305,10 @@
       }, err => console.error("日誌同步異常:", err));
     }
 
+    // 支援非同步 Promise 的雲端寫入，確保清空時能等它完成
     function syncToCloud(collectionKey, dataPayload) {
-      if (!isCloudReady) return;
-      db.collection("gk_gym").doc(collectionKey).set(dataPayload).catch(err => {
+      if (!isCloudReady) return Promise.resolve();
+      return db.collection("gk_gym").doc(collectionKey).set(dataPayload).catch(err => {
         console.error("雲端背景寫入失敗:", err);
       });
     }
@@ -325,7 +326,7 @@
       const mCount = Object.keys(members).length;
       const pCount = Object.keys(ptPool).length;
       const mlbl = document.getElementById('memberCountLabel');
-      if (mlbl) mlbl.innerText = mCount > 0 ? mCount : '...';
+      if (mlbl) mlbl.innerText = mCount > 0 ? mCount : '0';
       const plbl = document.getElementById('ptPoolCountLabel');
       if (plbl) plbl.innerText = pCount > 0 ? pCount : '0';
     }
@@ -358,7 +359,7 @@
         checkinBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-amber-400 to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20";
         phoneSec.classList.remove('hidden');
         nameSec.classList.add('hidden');
-        document.getElementById('inputSubtitle').innerText = "請輸入您的手機號碼以核對身份";
+        document.getElementById('inputSubtitle').innerText = "請輸入手機號碼（支援鍵盤直接打字 / Enter送出）";
       } else if (type === 'PT') {
         ptBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-600/20";
         phoneSec.classList.add('hidden');
@@ -368,7 +369,7 @@
         inbodyBtn.className = "py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-teal-400 to-teal-500 text-slate-950 shadow-lg shadow-teal-500/20";
         phoneSec.classList.remove('hidden');
         nameSec.classList.add('hidden');
-        document.getElementById('inputSubtitle').innerText = "請輸入手機號碼查驗身體檢測資格";
+        document.getElementById('inputSubtitle').innerText = "請輸入手機號碼查驗身體檢測（支援鍵盤直接打字）";
       }
       clearPhone();
     }
@@ -385,6 +386,13 @@
       renderPhone();
     }
 
+    function deleteLastDigit() {
+      if (currentPhone.length > 0) {
+        currentPhone = currentPhone.slice(0, -1);
+        renderPhone();
+      }
+    }
+
     function renderPhone() {
       const el = document.getElementById('phoneDisplay');
       if (!currentPhone) {
@@ -397,6 +405,37 @@
     function clearPtName() {
       document.getElementById('ptNameInput').value = '';
     }
+
+    // 電腦鍵盤直接打字監聽
+    window.addEventListener('keydown', function(e) {
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      if (activeTag === 'input' || activeTag === 'textarea') {
+        if (e.key === 'Enter' && document.activeElement.id === 'ptNameInput') {
+          verifyPTByName();
+        }
+        return;
+      }
+
+      const resultOverlay = document.getElementById('resultOverlay');
+      if (!resultOverlay.classList.contains('hidden')) {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          closeResultModal();
+        }
+        return;
+      }
+
+      if (currentTask === 'PT') return;
+
+      if (e.key >= '0' && e.key <= '9') {
+        pressKey(e.key);
+      } else if (e.key === 'Backspace') {
+        deleteLastDigit();
+      } else if (e.key === 'Delete' || e.key === 'Escape') {
+        clearPhone();
+      } else if (e.key === 'Enter') {
+        verifyCheckin();
+      }
+    });
 
     function verifyCheckin() {
       if (currentPhone.length !== 10 || !currentPhone.startsWith('09')) {
@@ -551,7 +590,7 @@
             <p class="text-emerald-300 font-bold text-base sm:text-lg">👉 請出示紙本 LINE QR CODE 掃描 1 次</p>
             <p class="text-[11px] text-slate-400 mt-1">本週額度已核銷，下週一方可再次領取</p>
           </div>
-          <button onclick="closeResultModal()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-base font-black rounded-2xl shadow-lg">確認完成・返回</button>
+          <button onclick="closeResultModal()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-base font-black rounded-2xl shadow-lg">確認完成・返回 (Enter)</button>
         `;
       } else if (status === 'CHECKIN_BLOCKED') {
         box.className = "max-w-md w-full bg-slate-900 border border-slate-750 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
@@ -565,7 +604,7 @@
             <div class="text-[11px] text-slate-500">上次打卡：${data.log.timestamp}</div>
             <div class="text-[11px] text-indigo-400 font-semibold pt-1">✨ 下週一將自動重置額度，歡迎下週再來運動！</div>
           </div>
-          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl">好的，我知道了</button>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl">好的，我知道了 (Enter)</button>
         `;
       } else if (status === 'PT_SUCCESS') {
         box.className = "max-w-md w-full bg-slate-900 border-2 border-indigo-500 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
@@ -600,7 +639,7 @@
           <h2 class="text-xl sm:text-2xl font-black text-amber-400 mb-1">查無此會員電話</h2>
           <p class="text-lg font-mono text-white mb-3">${data.phone}</p>
           <p class="text-xs text-slate-400 mb-6 text-center">若為剛辦理會籍之新會員，請告知櫃檯服務人員協助建檔。</p>
-          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">返回重試</button>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">返回重試 (Enter)</button>
         `;
       } else if (status === 'INBODY_SUCCESS') {
         box.className = "max-w-md w-full bg-slate-900 border-2 border-teal-500 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
@@ -612,7 +651,7 @@
             <p class="text-teal-300 font-bold text-base">👉 請出示紙本 LINE QR CODE 掃描 1 次</p>
             <p class="text-[11px] text-slate-400 mt-1">此項目已核銷完畢，活動期間限領一次</p>
           </div>
-          <button onclick="closeResultModal()" class="w-full py-3.5 bg-teal-600 hover:bg-teal-500 text-slate-950 font-black rounded-2xl">確認完成</button>
+          <button onclick="closeResultModal()" class="w-full py-3.5 bg-teal-600 hover:bg-teal-500 text-slate-950 font-black rounded-2xl">確認完成 (Enter)</button>
         `;
       } else if (status === 'INBODY_BLOCKED') {
         box.className = "max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl";
@@ -622,7 +661,7 @@
           <h2 class="text-xl sm:text-2xl font-bold text-white mb-1">身體檢測點數已領取過囉！</h2>
           <p class="text-base font-bold text-amber-400 mb-4">${data.member.name} 會員您好</p>
           <p class="text-xs sm:text-sm text-slate-300 mb-6 text-center">感謝您的參與！本活動身體檢測任務每人限集點一次，點數已發放完畢。</p>
-          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">好的，我知道了</button>
+          <button onclick="closeResultModal()" class="w-full py-3 bg-slate-800 text-slate-200 font-bold rounded-2xl">好的，我知道了 (Enter)</button>
         `;
       }
 
@@ -635,6 +674,7 @@
     }
 
     function maskPhone(p) {
+      if (!p || p.length < 10) return p;
       return p.substring(0, 4) + '***' + p.substring(7);
     }
 
@@ -653,7 +693,7 @@
       renderRecentLogs();
     }
 
-    // 現場快速建檔（加入防呆：若電話已存在立即彈窗攔截，不允許重複建檔）
+    // 現場快速建檔（加入重複手機號碼攔截防呆）
     async function saveQuickMember() {
       const nameInput = document.getElementById('newMemberName');
       const phoneInput = document.getElementById('newMemberPhone');
@@ -677,14 +717,12 @@
         return;
       }
 
-      // 重複電話檢查防呆
       if (members[phone]) {
         alert(`⚠️ 建檔失敗：此手機號碼已經註冊過！\n現有會員姓名：${members[phone].name}\n手機號碼：${phone}`);
         phoneInput.focus();
         return;
       }
 
-      // 1. 本地立即生效並寫入本機快取
       members[phone] = { name, phone, bodyTested: false };
       localStorage.setItem('gk_cache_members', JSON.stringify(members));
       updateCounters();
@@ -696,7 +734,6 @@
 
       alert(`✅ 建檔成功！\n姓名：${name}\n電話：${phone}\n資料已寫入系統。`);
 
-      // 2. 局部快速更新至雲端
       if (isCloudReady) {
         try {
           const updateField = {};
@@ -761,7 +798,8 @@
       syncToCloud('logs_data', { list: checkinLogs });
     }
 
-    function deleteMember(phone) {
+    // 單筆刪除會員：徹底比對姓名與電話，清除日誌與雲端欄位
+    async function deleteMember(phone) {
       const m = members[phone];
       if (!m) return;
 
@@ -771,11 +809,36 @@
         return;
       }
 
+      const memberName = m.name;
+
+      // 1. 本地立即清除名冊
       delete members[phone];
       localStorage.setItem('gk_cache_members', JSON.stringify(members));
+
+      // 2. 徹底過濾該會員的核銷歷史（比對電話與姓名）
+      checkinLogs = checkinLogs.filter(log => log.phone !== phone && log.name !== memberName);
+      localStorage.setItem('gk_cache_logs', JSON.stringify(checkinLogs));
+
+      // 3. 畫面立即刷新
       updateCounters();
       renderMemberList();
-      syncToCloud('members_data', { list: members });
+      renderRecentLogs();
+
+      // 4. 同步至雲端
+      if (isCloudReady) {
+        try {
+          const deleteField = {};
+          deleteField[`list.${phone}`] = firebase.firestore.FieldValue.delete();
+          await db.collection("gk_gym").doc("members_data").update(deleteField);
+          await syncToCloud('logs_data', { list: checkinLogs });
+          alert(`✅ 已徹底刪除會員「${memberName}」及其核銷紀錄！`);
+        } catch (err) {
+          console.warn("Update 刪除失敗，改用整包覆蓋:", err);
+          await syncToCloud('members_data', { list: members });
+          await syncToCloud('logs_data', { list: checkinLogs });
+          alert(`✅ 已刪除會員「${memberName}」！`);
+        }
+      }
     }
 
     function renderMemberList() {
@@ -835,7 +898,8 @@
       }).join('');
     }
 
-    function clearPtPool() {
+    // 清空教練課庫存
+    async function clearPtPool() {
       const inputPin = prompt('【高風險安全驗證】\n即將清空所有「教練課未領取堂數庫存」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
         if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
@@ -849,31 +913,52 @@
         localStorage.setItem('gk_cache_sessions', '[]');
         updateCounters();
         renderPtPool();
-        syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
+        
+        await syncToCloud('pt_pool_data', { list: {}, sessions: [] });
+        alert('✅ 教練課堂數庫存已成功清空！');
       }
     }
 
-    function clearAllData() {
-      const inputPin = prompt('【極度危險安全驗證】\n即將永久清空「所有會員名冊、打卡紀錄、教練課點數」！\n請輸入管理員 PIN 碼：');
+    // 關鍵修復：清空所有資料（加入 await 等待雲端日誌寫入完成，徹底杜絕舊資料重現）
+    async function clearAllData() {
+      const inputPin = prompt('【極度危險安全驗證】\n即將永久清空「所有會員名冊、打卡簽到紀錄、教練課點數」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
         if (inputPin !== null) alert('PIN 碼錯誤！取消清空操作。');
         return;
       }
 
       if (confirm('PIN 碼正確。最後一次確認：確定要抹除本系統所有紀錄嗎？(此操作不可復原)')) {
+        // 1. 本機快取即刻歸零
         members = {};
         checkinLogs = [];
         ptPool = {};
         processedSessions = [];
         localStorage.clear();
-        syncToCloud('members_data', { list: members });
-        syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
-        syncToCloud('logs_data', { list: checkinLogs });
-        location.reload();
+
+        // 2. 介面立即顯示歸零狀態
+        updateCounters();
+        renderMemberList();
+        renderPtPool();
+        renderRecentLogs();
+
+        // 3. 確保雲端三個文件皆完成寫入清空後，再通知使用者
+        try {
+          await Promise.all([
+            syncToCloud('members_data', { list: {} }),
+            syncToCloud('pt_pool_data', { list: {}, sessions: [] }),
+            syncToCloud('logs_data', { list: [] })
+          ]);
+          alert('✅ 所有資料與簽到紀錄已徹底抹除！系統將為您重新整理。');
+          location.reload();
+        } catch (e) {
+          console.error("雲端抹除失敗:", e);
+          alert('本機資料已清空，雲端同步中，頁面即將重整。');
+          location.reload();
+        }
       }
     }
 
-    // 1. 匯入公司會員名冊
+    // 1. 匯入公司會員名冊（防呆：若誤選教練簽到表則攔截）
     document.getElementById('excelFileInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -888,18 +973,33 @@
 
           if (rows.length < 2) {
             alert('Excel 內容為空或無有效資料列');
+            e.target.value = '';
             return;
           }
 
           const headerRow = rows[0] || [];
-          let nameColIdx = 2;
-          let phoneColIdx = 3;
+          const headerString = headerRow.join(' ');
+
+          if (headerString.includes('教練') || headerString.includes('簽到時間')) {
+            alert('❌ 檔案選錯了！\n這份看起來是「教練課簽到報表」，不是「會員名冊」！\n系統已自動攔截，未做任何更動。');
+            e.target.value = '';
+            return;
+          }
+
+          let nameColIdx = -1;
+          let phoneColIdx = -1;
 
           headerRow.forEach((h, idx) => {
             const txt = String(h || '').trim();
             if (txt.includes('顧客名稱') || txt.includes('姓名') || txt.toLowerCase().includes('name')) nameColIdx = idx;
             if (txt.includes('手機') || txt.includes('電話') || txt.toLowerCase().includes('phone')) phoneColIdx = idx;
           });
+
+          if (phoneColIdx === -1) {
+            alert('❌ 檔案欄位錯誤！\n在此檔案中找不到「手機」或「電話」欄位，請確認格式。');
+            e.target.value = '';
+            return;
+          }
 
           let importedCount = 0;
 
@@ -929,14 +1029,16 @@
           renderMemberList();
           syncToCloud('members_data', { list: members });
           alert(`會員名冊匯入成功！已更新 ${importedCount} 筆會員資料至雲端。`);
+          e.target.value = '';
         } catch (err) {
           alert('Excel 讀取失敗，請確認檔案格式是否正確。');
+          e.target.value = '';
         }
       };
       reader.readAsArrayBuffer(file);
     });
 
-    // 2. 匯入教練簽到表
+    // 2. 匯入教練簽到表（防呆：若誤選會員名冊，瞬間攔截拒絕）
     document.getElementById('excelPTFileInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -951,10 +1053,26 @@
 
           if (rows.length < 2) {
             alert('教練課簽到報表為空');
+            e.target.value = '';
             return;
           }
 
           const headerRow = rows[0] || [];
+          const headerString = headerRow.join(' ');
+
+          const isMemberSheet = (headerString.includes('手機') || headerString.includes('電話')) && !headerString.includes('教練');
+          if (isMemberSheet) {
+            alert('🚨 危險操作攔截！\n您在「教練課簽到表」上傳了「會員通訊名冊」！\n系統已全面阻擋，未新增任何堂數，請放心。');
+            e.target.value = '';
+            return;
+          }
+
+          if (!headerString.includes('教練')) {
+            alert('❌ 檔案格式不符！\n此報表表頭未包含「教練」相關欄位，無法辨識課程歸屬。');
+            e.target.value = '';
+            return;
+          }
+
           let timeColIdx1 = 1;
           let coachColIdx1 = 2;
           let nameColIdx1 = 3;
@@ -1040,10 +1158,12 @@
             msg += `\n• 自動過濾已匯入過課程：${skippedDuplicates} 堂（防重複生效）`;
           }
           alert(msg);
+          e.target.value = '';
           closeModal('adminModal');
         } catch (err) {
           console.error(err);
           alert('教練課簽到表讀取失敗，請確認檔案格式。');
+          e.target.value = '';
         }
       };
       reader.readAsArrayBuffer(file);
