@@ -45,7 +45,7 @@
   <!-- 中間主要操作區 -->
   <main class="max-w-md w-full mx-auto my-auto flex flex-col items-center">
     
-    <!-- 任務標籤 -->
+    <!-- 3 大任務標籤 -->
     <div class="grid grid-cols-3 gap-2.5 w-full mb-4">
       <button id="taskCheckinBtn" onclick="setTaskType('CHECKIN')" class="py-3 rounded-2xl font-black text-xs sm:text-sm bg-gradient-to-b from-amber-400 to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20">
         📍 運動打卡<br><span class="text-[10px] font-semibold opacity-90">每週限領 1 次</span>
@@ -235,6 +235,9 @@
       appId: "1:1037818637469:web:89e36b5e537da10c10f874"
     };
 
+    // Google Apps Script 試算表寫入 API 網址（已填入專屬端點）
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw__6fVoyQsA2jygG_t9PEQ295COUTaYJG9MaOKpqSt9UzNuXiVecTGHHCtjqXU375b0w/exec";
+
     const SECURITY_PIN = "GK20261031";
 
     let db;
@@ -249,14 +252,12 @@
     let currentTask = 'CHECKIN';
     let currentPhone = '';
 
-    // 立即顯示本機快取計數
     updateCounters();
 
     try {
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
 
-      // 開啟本機持久化
       db.enablePersistence({ synchronizeTabs: true }).catch(err => {
         if (err.code === 'failed-precondition') {
           console.warn('多個分頁開啟，離線快取僅支援主要分頁');
@@ -305,12 +306,39 @@
       }, err => console.error("日誌同步異常:", err));
     }
 
-    // 支援非同步 Promise 的雲端寫入，確保清空時能等它完成
+    // 整包覆蓋（僅供名冊、課堂數使用，日誌嚴禁使用）
     function syncToCloud(collectionKey, dataPayload) {
       if (!isCloudReady) return Promise.resolve();
       return db.collection("gk_gym").doc(collectionKey).set(dataPayload).catch(err => {
         console.error("雲端背景寫入失敗:", err);
       });
+    }
+
+    // 【雙軌原子追加】Firebase arrayUnion + Google 試算表 appendRow
+    function appendLogToCloud(newLog) {
+      // 1. Firebase 原子追加（絕不覆蓋）
+      if (isCloudReady) {
+        db.collection("gk_gym").doc("logs_data").set({
+          list: firebase.firestore.FieldValue.arrayUnion(newLog)
+        }, { merge: true }).catch(err => console.error("Firebase 追加失敗:", err));
+      }
+
+      // 2. Google 試算表同步追加（永不遺失的第二道防線）
+      if (GAS_API_URL) {
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'appendLog',
+            customer: `${newLog.name} (${newLog.phone})`,
+            taskType: newLog.type === 'PT' ? '教練課程' : (newLog.type === 'INBODY' ? '身體檢測' : '運動打卡'),
+            points: newLog.points || 1,
+            week: newLog.week,
+            timestamp: newLog.timestamp
+          })
+        }).catch(err => console.error("試算表背景追加失敗:", err));
+      }
     }
 
     function cleanPersonName(raw) {
@@ -406,7 +434,6 @@
       document.getElementById('ptNameInput').value = '';
     }
 
-    // 電腦鍵盤直接打字監聽
     window.addEventListener('keydown', function(e) {
       const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       if (activeTag === 'input' || activeTag === 'textarea') {
@@ -460,17 +487,19 @@
         if (thisWeekLog) {
           showResultModal('CHECKIN_BLOCKED', { member, log: thisWeekLog });
         } else {
-          checkinLogs.unshift({
+          const newLog = {
             phone,
             name: member.name,
             type: 'CHECKIN',
             points: 1,
             week: currentWeek,
             timestamp: now.toLocaleString('zh-TW', { hour12: false })
-          });
+          };
+          checkinLogs.unshift(newLog);
           localStorage.setItem('gk_cache_logs', JSON.stringify(checkinLogs));
           showResultModal('CHECKIN_SUCCESS', { member });
-          syncToCloud('logs_data', { list: checkinLogs });
+          
+          appendLogToCloud(newLog);
         }
       } else if (currentTask === 'INBODY') {
         const testedLog = checkinLogs.find(l => l.phone === phone && l.type === 'INBODY');
@@ -478,19 +507,21 @@
           showResultModal('INBODY_BLOCKED', { member, log: testedLog });
         } else {
           member.bodyTested = true;
-          checkinLogs.unshift({
+          const newLog = {
             phone,
             name: member.name,
             type: 'INBODY',
             points: 1,
             week: currentWeek,
             timestamp: now.toLocaleString('zh-TW', { hour12: false })
-          });
+          };
+          checkinLogs.unshift(newLog);
           localStorage.setItem('gk_cache_members', JSON.stringify(members));
           localStorage.setItem('gk_cache_logs', JSON.stringify(checkinLogs));
           showResultModal('INBODY_SUCCESS', { member });
+          
           syncToCloud('members_data', { list: members });
-          syncToCloud('logs_data', { list: checkinLogs });
+          appendLogToCloud(newLog);
         }
       }
 
@@ -555,15 +586,16 @@
       const now = new Date();
       const currentWeek = getCurrentISOWeek();
 
-      checkinLogs.unshift({
+      const newLog = {
         phone: `${coach}教練`,
         name: name,
         type: 'PT',
         points: points,
         week: currentWeek,
         timestamp: now.toLocaleString('zh-TW', { hour12: false })
-      });
+      };
 
+      checkinLogs.unshift(newLog);
       delete ptPool[key];
       localStorage.setItem('gk_cache_pt', JSON.stringify(ptPool));
       localStorage.setItem('gk_cache_logs', JSON.stringify(checkinLogs));
@@ -571,7 +603,7 @@
       closeResultModal();
 
       syncToCloud('pt_pool_data', { list: ptPool, sessions: processedSessions });
-      syncToCloud('logs_data', { list: checkinLogs });
+      appendLogToCloud(newLog);
     }
 
     function showResultModal(status, data) {
@@ -693,7 +725,6 @@
       renderRecentLogs();
     }
 
-    // 現場快速建檔（加入重複手機號碼攔截防呆）
     async function saveQuickMember() {
       const nameInput = document.getElementById('newMemberName');
       const phoneInput = document.getElementById('newMemberPhone');
@@ -795,10 +826,8 @@
       alert(`會員資料修改成功！`);
 
       syncToCloud('members_data', { list: members });
-      syncToCloud('logs_data', { list: checkinLogs });
     }
 
-    // 單筆刪除會員：徹底比對姓名與電話，清除日誌與雲端欄位
     async function deleteMember(phone) {
       const m = members[phone];
       if (!m) return;
@@ -811,31 +840,25 @@
 
       const memberName = m.name;
 
-      // 1. 本地立即清除名冊
       delete members[phone];
       localStorage.setItem('gk_cache_members', JSON.stringify(members));
 
-      // 2. 徹底過濾該會員的核銷歷史（比對電話與姓名）
       checkinLogs = checkinLogs.filter(log => log.phone !== phone && log.name !== memberName);
       localStorage.setItem('gk_cache_logs', JSON.stringify(checkinLogs));
 
-      // 3. 畫面立即刷新
       updateCounters();
       renderMemberList();
       renderRecentLogs();
 
-      // 4. 同步至雲端
       if (isCloudReady) {
         try {
           const deleteField = {};
           deleteField[`list.${phone}`] = firebase.firestore.FieldValue.delete();
           await db.collection("gk_gym").doc("members_data").update(deleteField);
-          await syncToCloud('logs_data', { list: checkinLogs });
-          alert(`✅ 已徹底刪除會員「${memberName}」及其核銷紀錄！`);
+          await db.collection("gk_gym").doc("logs_data").set({ list: checkinLogs });
+          alert(`✅ 已徹底刪除會員「${memberName}」！`);
         } catch (err) {
-          console.warn("Update 刪除失敗，改用整包覆蓋:", err);
           await syncToCloud('members_data', { list: members });
-          await syncToCloud('logs_data', { list: checkinLogs });
           alert(`✅ 已刪除會員「${memberName}」！`);
         }
       }
@@ -898,7 +921,6 @@
       }).join('');
     }
 
-    // 清空教練課庫存
     async function clearPtPool() {
       const inputPin = prompt('【高風險安全驗證】\n即將清空所有「教練課未領取堂數庫存」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
@@ -919,7 +941,6 @@
       }
     }
 
-    // 關鍵修復：清空所有資料（加入 await 等待雲端日誌寫入完成，徹底杜絕舊資料重現）
     async function clearAllData() {
       const inputPin = prompt('【極度危險安全驗證】\n即將永久清空「所有會員名冊、打卡簽到紀錄、教練課點數」！\n請輸入管理員 PIN 碼：');
       if (inputPin !== SECURITY_PIN) {
@@ -928,20 +949,17 @@
       }
 
       if (confirm('PIN 碼正確。最後一次確認：確定要抹除本系統所有紀錄嗎？(此操作不可復原)')) {
-        // 1. 本機快取即刻歸零
         members = {};
         checkinLogs = [];
         ptPool = {};
         processedSessions = [];
         localStorage.clear();
 
-        // 2. 介面立即顯示歸零狀態
         updateCounters();
         renderMemberList();
         renderPtPool();
         renderRecentLogs();
 
-        // 3. 確保雲端三個文件皆完成寫入清空後，再通知使用者
         try {
           await Promise.all([
             syncToCloud('members_data', { list: {} }),
@@ -958,7 +976,6 @@
       }
     }
 
-    // 1. 匯入公司會員名冊（防呆：若誤選教練簽到表則攔截）
     document.getElementById('excelFileInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -1038,7 +1055,6 @@
       reader.readAsArrayBuffer(file);
     });
 
-    // 2. 匯入教練簽到表（防呆：若誤選會員名冊，瞬間攔截拒絕）
     document.getElementById('excelPTFileInput').addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (!file) return;
@@ -1104,7 +1120,6 @@
             const row = rows[i];
             if (!row || row.length === 0) continue;
 
-            // 私教軌道
             const time1 = row[timeColIdx1] !== undefined ? String(row[timeColIdx1]).trim() : '';
             const rawCoach1 = row[coachColIdx1] !== undefined ? String(row[coachColIdx1]).trim() : '';
             const rawName1 = row[nameColIdx1] !== undefined ? String(row[nameColIdx1]).trim() : '';
@@ -1125,7 +1140,6 @@
               }
             }
 
-            // 小班制軌道
             const time2 = row[timeColIdx2] !== undefined ? String(row[timeColIdx2]).trim() : '';
             const rawCoach2 = row[coachColIdx2] !== undefined ? String(row[coachColIdx2]).trim() : '';
             const rawName2 = row[nameColIdx2] !== undefined ? String(row[nameColIdx2]).trim() : '';
@@ -1188,13 +1202,19 @@
       link.click();
     }
 
+    // 最新打卡時間永遠置頂
     function renderRecentLogs() {
       const list = document.getElementById('recentLogsList');
-      if (checkinLogs.length === 0) {
+      if (!checkinLogs || checkinLogs.length === 0) {
         list.innerHTML = '<div class="text-slate-500 py-2">尚未有領取紀錄</div>';
         return;
       }
-      list.innerHTML = checkinLogs.slice(0, 5).map(l => {
+
+      const sortedLogs = [...checkinLogs].sort((a, b) => {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
+
+      list.innerHTML = sortedLogs.slice(0, 5).map(l => {
         let badgeColor = 'bg-amber-500/20 text-amber-400';
         let typeName = '運動打卡';
         if (l.type === 'PT') {
